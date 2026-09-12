@@ -21,21 +21,39 @@ class Security {
 	/**
 	 * Create a chat nonce.
 	 *
+	 * The public widget nonce is request-context independent so it verifies
+	 * identically for anonymous and logged-in visitors. WordPress nonces are
+	 * bound to the session token in the visitor's cookie (wp_get_session_token()
+	 * is consulted even when the current user is anonymous), and REST requests
+	 * without an X-WP-Nonce are treated as anonymous, so a nonce minted by the
+	 * rendered page can never match the verification context. The widget
+	 * therefore uses an HMAC token derived from the site salt and time window.
+	 * Pass an explicit user ID to opt into a user-scoped WordPress nonce.
+	 *
 	 * @param int $user_id User ID to scope the nonce to (0 for visitors).
 	 * @return string
 	 */
 	public static function create_nonce( int $user_id = 0 ): string {
-		if ( $user_id <= 0 && is_user_logged_in() ) {
-			$user_id = get_current_user_id();
+		if ( $user_id > 0 ) {
+			return wp_create_nonce( self::NONCE_ACTION . "_user_{$user_id}" );
 		}
 
-		return wp_create_nonce( self::NONCE_ACTION . ( $user_id > 0 ? "_user_{$user_id}" : '_guest' ) );
+		return self::build_guest_nonce();
+	}
+
+	/**
+	 * Build a guest nonce for the current time window.
+	 *
+	 * @return string
+	 */
+	private static function build_guest_nonce(): string {
+		return substr( hash_hmac( 'sha256', wp_nonce_tick() . '|' . self::NONCE_ACTION . '_guest', self::secret_salt() ), 0, 10 );
 	}
 
 	/**
 	 * Verify the chat nonce.
 	 *
-	 * @param int    $user_id Expected user ID.
+	 * @param int    $user_id Expected user ID (0 verifies the widget guest nonce).
 	 * @param string $nonce   Submitted nonce.
 	 * @return bool
 	 */
@@ -44,7 +62,24 @@ class Security {
 			return false;
 		}
 
-		return (bool) wp_verify_nonce( $nonce, self::NONCE_ACTION . ( $user_id > 0 ? "_user_{$user_id}" : '_guest' ) );
+		if ( $user_id > 0 ) {
+			return (bool) wp_verify_nonce( $nonce, self::NONCE_ACTION . "_user_{$user_id}" );
+		}
+
+		return self::verify_guest_nonce( $nonce );
+	}
+
+	/**
+	 * Verify a widget guest nonce against the current and previous time window.
+	 *
+	 * @param string $nonce Submitted nonce.
+	 * @return bool
+	 */
+	private static function verify_guest_nonce( string $nonce ): bool {
+		$tick = wp_nonce_tick();
+
+		return hash_equals( substr( hash_hmac( 'sha256', $tick . '|' . self::NONCE_ACTION . '_guest', self::secret_salt() ), 0, 10 ), $nonce )
+			|| hash_equals( substr( hash_hmac( 'sha256', ( $tick - 1 ) . '|' . self::NONCE_ACTION . '_guest', self::secret_salt() ), 0, 10 ), $nonce );
 	}
 
 	/**

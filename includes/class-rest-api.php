@@ -136,13 +136,17 @@ class REST_API {
 	/**
 	 * Verify the public chat nonce sent in the X-AIWC-Nonce header.
 	 *
+	 * The widget always sends a guest-scoped nonce, verified against the
+	 * anonymous user context. WordPress REST requests without an X-WP-Nonce
+	 * are treated as anonymous even when the browser is logged in, so the
+	 * check must not rely on the current user.
+	 *
 	 * @return bool
 	 */
 	public function public_nonce_check(): bool {
-		$user_id = is_user_logged_in() ? get_current_user_id() : 0;
-		$nonce   = isset( $_SERVER['HTTP_X_AIWC_NONCE'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_AIWC_NONCE'] ) ) : '';
+		$nonce = isset( $_SERVER['HTTP_X_AIWC_NONCE'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_AIWC_NONCE'] ) ) : '';
 
-		return Security::verify_nonce( (int) $user_id, $nonce );
+		return Security::verify_nonce( 0, $nonce );
 	}
 
 	/**

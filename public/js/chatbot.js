@@ -223,7 +223,7 @@
 				phone.disabled = true;
 				note.disabled = true;
 				window.setTimeout(function () {
-					addMessage('assistant', 'Thank you! A member of our team will be in touch shortly.');
+					els.messages.appendChild(addMessage('assistant', 'Thank you! A member of our team will be in touch shortly.'));
 				}, 600);
 			}).catch(function () {
 				submit.disabled = false;
@@ -354,7 +354,10 @@
 
 			if (result.status !== 200 || !json.success) {
 				var code = json.code || '';
-				var msg = (code === 'aiwc_rate_limited' || code === 'aiwc_daily_limit')
+				if (typeof console !== 'undefined' && console.error) {
+					console.error('[aiwc] chat error', { status: result.status, code: code, message: json.message || '', json: json });
+				}
+				var msg = (code === 'aiwc_rate_limited' || code === 'aiwc_daily_limit' || code === 'aiwc_api_rate_limit')
 					? json.message
 					: 'Sorry, something went wrong. Please try again shortly.';
 				var err = addMessage('assistant', msg, { messageId: 0 });
@@ -367,6 +370,7 @@
 				});
 				actions.appendChild(retry);
 				err.querySelector('.aiwc-msg-meta, .aiwc-msg-bubble').appendChild(actions);
+				els.messages.appendChild(err);
 				scrollToBottom();
 				return;
 			}
@@ -398,6 +402,7 @@
 			typing.remove();
 			var err = addMessage('assistant', 'Sorry, we could not reach the server. Please try again.');
 			err.classList.add('aiwc-error');
+			els.messages.appendChild(err);
 			scrollToBottom();
 		});
 	}
