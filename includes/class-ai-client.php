@@ -37,6 +37,10 @@ class AI_Client {
 			return $client->chat( $messages, $options );
 		}
 
+		if ( 'openrouter' === $provider ) {
+			return self::openrouter_chat( $messages, $options );
+		}
+
 		if ( 'openai' !== $provider ) {
 			return new \WP_Error( 'aiwc_unknown_provider', __( 'The configured AI provider is not supported.', 'ai-website-chatbot' ) );
 		}
@@ -45,18 +49,71 @@ class AI_Client {
 	}
 
 	/**
-	 * Execute an OpenAI chat completions request with retry/backoff.
+	 * Execute an OpenAI chat completions request.
 	 *
 	 * @param array $messages Messages.
 	 * @param array $options  Options.
 	 * @return array|\WP_Error
 	 */
 	private static function openai_chat( array $messages, array $options = array() ) {
-		$api_key = Settings::get_api_key();
+		$api_key = Settings::get_api_key( 'openai' );
 		if ( '' === $api_key ) {
 			return new \WP_Error( 'aiwc_no_api_key', __( 'The AI provider is not configured yet.', 'ai-website-chatbot' ) );
 		}
 
+		$endpoint = apply_filters( 'ai_chatbot_ai_endpoint', 'https://api.openai.com/v1/chat/completions' );
+
+		return self::send_completions(
+			$endpoint,
+			array(
+				'Authorization' => 'Bearer ' . $api_key,
+				'Content-Type'  => 'application/json',
+			),
+			$messages,
+			$options
+		);
+	}
+
+	/**
+	 * Execute an OpenRouter chat completions request. OpenRouter exposes many
+	 * free (:free / openrouter/free) models through an OpenAI-compatible API.
+	 *
+	 * @param array $messages Messages.
+	 * @param array $options  Options.
+	 * @return array|\WP_Error
+	 */
+	private static function openrouter_chat( array $messages, array $options = array() ) {
+		$api_key = Settings::get_api_key( 'openrouter' );
+		if ( '' === $api_key ) {
+			return new \WP_Error( 'aiwc_no_api_key', __( 'The AI provider is not configured yet.', 'ai-website-chatbot' ) );
+		}
+
+		$endpoint = apply_filters( 'ai_chatbot_ai_endpoint', 'https://openrouter.ai/api/v1/chat/completions' );
+
+		return self::send_completions(
+			$endpoint,
+			array(
+				'Authorization' => 'Bearer ' . $api_key,
+				'Content-Type'  => 'application/json',
+				'HTTP-Referer'  => home_url( '/' ),
+				'X-Title'       => wp_specialchars_decode( (string) get_bloginfo( 'name' ), ENT_QUOTES ),
+			),
+			$messages,
+			$options
+		);
+	}
+
+	/**
+	 * Send a chat completion request to an OpenAI-compatible endpoint with
+	 * retry/backoff and structured error handling.
+	 *
+	 * @param string $endpoint Full API endpoint URL.
+	 * @param array  $headers  Request headers (Authorization prepared by caller).
+	 * @param array  $messages Messages.
+	 * @param array  $options  Options.
+	 * @return array|\WP_Error
+	 */
+	private static function send_completions( string $endpoint, array $headers, array $messages, array $options = array() ) {
 		$model       = (string) ( $options['model'] ?? Settings::get_setting( 'ai.model', 'gpt-4o-mini' ) );
 		$temperature = (float) ( $options['temperature'] ?? Settings::get_setting( 'ai.temperature', 0.3 ) );
 		$max_tokens  = (int) ( $options['max_tokens'] ?? Settings::get_setting( 'ai.max_tokens', 500 ) );
@@ -80,14 +137,9 @@ class AI_Client {
 
 		$args = array(
 			'timeout' => $timeout,
-			'headers' => array(
-				'Authorization' => 'Bearer ' . $api_key,
-				'Content-Type'  => 'application/json',
-			),
+			'headers' => $headers,
 			'body'    => wp_json_encode( $body ),
 		);
-
-		$endpoint = apply_filters( 'ai_chatbot_ai_endpoint', 'https://api.openai.com/v1/chat/completions' );
 
 		$attempt = 0;
 		$last_error = null;
@@ -128,8 +180,14 @@ class AI_Client {
 
 					return new \WP_Error( 'aiwc_invalid_key', __( 'The AI provider rejected the API key. Please check your configuration.', 'ai-website-chatbot' ) );
 				} else {
-					$last_error = new \WP_Error( 'aiwc_api_error', __( 'The AI service could not process the request.', 'ai-website-chatbot' ), array( 'status' => $status ) );
-					Logger::error( 'ai_request', 'AI service error', array( 'status' => $status ) );
+					$error_data    = json_decode( $raw, true );
+					$error_message = isset( $error_data['error']['message'] ) && is_string( $error_data['error']['message'] ) ? trim( $error_data['error']['message'] ) : '';
+					$last_error    = new \WP_Error(
+						'aiwc_api_error',
+						'' !== $error_message ? $error_message : __( 'The AI service could not process the request.', 'ai-website-chatbot' ),
+						array( 'status' => $status )
+					);
+					Logger::error( 'ai_request', 'AI service error', array( 'status' => $status, 'detail' => $error_message ) );
 				}
 			}
 

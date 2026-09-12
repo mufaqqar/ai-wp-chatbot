@@ -270,8 +270,9 @@ class Admin {
 
 		check_admin_referer( 'aiwc_save_api_key' );
 
-		$key = trim( (string) sanitize_text_field( wp_unslash( $_POST['aiwc_api_key'] ?? '' ) ) );
-		Settings::set_api_key( $key );
+		$key      = trim( (string) sanitize_text_field( wp_unslash( $_POST['aiwc_api_key'] ?? '' ) ) );
+		$provider = sanitize_text_field( wp_unslash( $_POST['aiwc_provider'] ?? '' ) );
+		Settings::set_api_key( $key, '' !== $provider ? $provider : '' );
 
 		wp_safe_redirect( admin_url( 'admin.php?page=aiwc-ai&aiwc_saved=1' ) );
 		exit;

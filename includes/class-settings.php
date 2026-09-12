@@ -232,7 +232,7 @@ class Settings {
 				$values['custom_instructions'] = sanitize_textarea_field( (string) $values['custom_instructions'] );
 				break;
 			case 'ai':
-				$values['provider']    = in_array( $values['provider'], array( 'openai' ), true ) ? $values['provider'] : 'openai';
+				$values['provider']    = in_array( $values['provider'], array( 'openai', 'openrouter' ), true ) ? $values['provider'] : 'openai';
 				$values['model']       = sanitize_text_field( (string) $values['model'] );
 				$values['temperature'] = min( 2.0, max( 0.0, (float) $values['temperature'] ) );
 				$values['max_tokens']  = max( 1, (int) $values['max_tokens'] );
@@ -310,31 +310,68 @@ class Settings {
 	}
 
 	/**
-	 * Return the securely-stored API key.
+	 * Return the securely-stored API key for a provider.
 	 *
+	 * @param string $provider Provider slug (openai|openrouter). Empty uses the active provider.
 	 * @return string
 	 */
-	public static function get_api_key(): string {
-		return (string) get_option( self::API_KEY_OPTION, '' );
+	public static function get_api_key( string $provider = '' ): string {
+		if ( '' === $provider ) {
+			$provider = (string) self::get_setting( 'ai.provider', 'openai' );
+		}
+
+		$key = (string) get_option( self::api_key_option( $provider ), '' );
+
+		// Backwards compatibility with the original single-key option.
+		if ( '' === $key && 'openai' === $provider ) {
+			$key = (string) get_option( self::API_KEY_OPTION, '' );
+		}
+
+		return $key;
 	}
 
 	/**
-	 * Store the API key in its own dedicated option.
+	 * Store the API key in a provider-specific option.
 	 *
-	 * @param string $key API key.
+	 * @param string $key      API key.
+	 * @param string $provider Provider slug. Empty uses the active provider.
 	 * @return void
 	 */
-	public static function set_api_key( string $key ): void {
-		update_option( self::API_KEY_OPTION, $key );
+	public static function set_api_key( string $key, string $provider = '' ): void {
+		if ( '' === $provider ) {
+			$provider = (string) self::get_setting( 'ai.provider', 'openai' );
+		}
+
+		update_option( self::api_key_option( $provider ), $key );
+
+		// Keep the legacy option in sync for the OpenAI provider.
+		if ( 'openai' === $provider ) {
+			update_option( self::API_KEY_OPTION, $key );
+		}
 	}
 
 	/**
-	 * Whether the plugin is ready to make AI requests.
+	 * Option name that holds the key for a given provider.
 	 *
+	 * @param string $provider Provider slug.
+	 * @return string
+	 */
+	public static function api_key_option( string $provider = '' ): string {
+		if ( '' === $provider ) {
+			$provider = (string) self::get_setting( 'ai.provider', 'openai' );
+		}
+
+		return 'openrouter' === $provider ? 'aiwc_api_key_openrouter' : 'aiwc_api_key_openai';
+	}
+
+	/**
+	 * Whether the plugin is ready to make AI requests for a provider.
+	 *
+	 * @param string $provider Provider slug. Empty uses the active provider.
 	 * @return bool
 	 */
-	public static function is_ai_configured(): bool {
-		return '' !== self::get_api_key();
+	public static function is_ai_configured( string $provider = '' ): bool {
+		return '' !== self::get_api_key( $provider );
 	}
 
 	/**

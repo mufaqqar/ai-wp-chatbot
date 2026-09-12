@@ -44,6 +44,8 @@ foreach ( $tables as $table ) {
 $options = array(
 	'aiwc_settings',
 	'aiwc_api_key',
+	'aiwc_api_key_openai',
+	'aiwc_api_key_openrouter',
 	'aiwc_db_version',
 	'aiwc_version',
 	'aiwc_index_progress',

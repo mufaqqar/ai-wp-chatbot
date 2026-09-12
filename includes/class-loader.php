@@ -20,8 +20,9 @@ final class Loader {
 	 * @var array<string,string>
 	 */
 	private static array $explicit_paths = array(
-		'Admin\Admin'  => 'admin/class-admin.php',
-		'Frontend'     => 'public/class-public.php',
+		'Admin\Admin'           => 'admin/class-admin.php',
+		'Frontend'              => 'public/class-public.php',
+		'WooCommerce_Integration' => 'includes/class-woocommerce.php',
 	);
 
 	/**

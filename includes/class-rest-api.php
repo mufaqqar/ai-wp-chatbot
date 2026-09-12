@@ -341,8 +341,9 @@ class REST_API {
 	 * @return \WP_REST_Response
 	 */
 	public function admin_save_api_key( \WP_REST_Request $request ) {
-		$key = trim( (string) $request->get_param( 'api_key' ) );
-		Settings::set_api_key( $key );
+		$key      = trim( (string) $request->get_param( 'api_key' ) );
+		$provider = sanitize_text_field( (string) $request->get_param( 'provider' ) );
+		Settings::set_api_key( $key, '' !== $provider ? $provider : '' );
 
 		return rest_ensure_response( array( 'success' => true ) );
 	}
