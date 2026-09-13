@@ -48,34 +48,41 @@ class Content_Indexer {
 
 	/**
 	 * Build a text block from post meta (custom fields) by flattening values,
-	 * skipping ACF field references, serialized blobs, images and other noise.
+	 * skipping internal keys, ACF field refs, serialized blobs, images and
+	 * other noise.  Works generically across any post type: each key-value
+	 * pair is emitted as "key: value" so plans, prices, specs, testimonials
+	 * and FaQ sections all contribute to search.
 	 *
-	 * @param int $post_id   Post ID.
-	 * @param int $max_items Maximum leaf values to include.
+	 * @param int $post_id     Post ID.
+	 * @param int $max_items   Maximum leaf values to include overall.
+	 * @param int $max_per_key Cap per key so a single huge repeatable field
+	 *                         cannot crowd out other keys (default 40).
 	 * @return string
 	 */
-	public static function meta_content( int $post_id, int $max_items = 300 ): string {
+	public static function meta_content( int $post_id, int $max_items = 300, int $max_per_key = 40 ): string {
 		$meta  = get_post_meta( $post_id );
 		$parts = array();
 
 		foreach ( (array) $meta as $key => $values ) {
-			if ( '' === (string) $key || 0 === strpos( (string) $key, '_' ) ) {
+			$key = (string) $key;
+			if ( '' === $key || self::is_internal_meta_key( $key ) ) {
 				continue;
 			}
-			$lkey = strtolower( (string) $key );
-			if ( 0 === strpos( $lkey, 'rank_math' ) || 0 === strpos( $lkey, 'yoast' ) ) {
-				continue;
-			}
+
+			$per_key = 0;
 			foreach ( (array) $values as $value ) {
 				foreach ( self::flatten_meta_value( $value ) as $text ) {
 					$text = aiwc_normalize_content( (string) $text );
 					if ( '' !== $text && ! self::is_noise_value( $text ) ) {
-						$parts[] = (string) $key . ': ' . $text;
+						$parts[] = $key . ': ' . $text;
+						if ( ++$per_key >= $max_per_key ) {
+							break 2;
+						}
+					}
+					if ( count( $parts ) >= $max_items ) {
+						break 3;
 					}
 				}
-			}
-			if ( count( $parts ) >= $max_items ) {
-				break;
 			}
 		}
 
@@ -84,6 +91,9 @@ class Content_Indexer {
 
 	/**
 	 * Recursively flatten a meta value into an array of leaf strings.
+	 * Handles nested arrays, PHP serialized data and JSON so any plugin's
+	 * storage format (ACF, CMB2, WooCommerce, Elementor, custom) can be
+	 * indexed.
 	 *
 	 * @param mixed $value Value from get_post_meta.
 	 * @param int   $depth Recursion depth guard.
@@ -117,6 +127,13 @@ class Content_Indexer {
 			return array();
 		}
 
+		if ( strlen( $s ) > 2 ) {
+			$json = json_decode( $s, true );
+			if ( is_array( $json ) && count( $json ) <= 100 ) {
+				return self::flatten_meta_value( $json, $depth + 1 );
+			}
+		}
+
 		return array( $s );
 	}
 
@@ -138,6 +155,28 @@ class Content_Indexer {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Whether custom fields (post meta) should be included for a given post
+	 * type. Requires the global master switch to be on; a per-type allowlist
+	 * ("meta_types") can then restrict which post types contribute meta.
+	 *
+	 * @param string $post_type Post type.
+	 * @return bool
+	 */
+	public static function meta_enabled_for( string $post_type ): bool {
+		if ( ! (bool) Settings::get_setting( 'knowledge.index_custom_fields', true ) ) {
+			return false;
+		}
+
+		$meta_types = array_values(
+			array_filter(
+				array_map( 'sanitize_key', (array) Settings::get_setting( 'knowledge.meta_types', array() ) )
+			)
+		);
+
+		return empty( $meta_types ) || in_array( $post_type, $meta_types, true );
 	}
 
 	/**
@@ -264,7 +303,7 @@ class Content_Indexer {
 			$content .= "\n" . $body;
 		}
 
-		if ( (bool) Settings::get_setting( 'knowledge.index_custom_fields', true ) ) {
+		if ( self::meta_enabled_for( $post->post_type ) ) {
 			$meta = self::meta_content( $post_id );
 			if ( '' !== $meta ) {
 				$content .= "\n" . $meta;

@@ -16,6 +16,18 @@ $saved_types = array_unique(
 		(array) \aiwc_get_setting( 'knowledge.content_types', array( 'page', 'post' ) )
 	)
 );
+
+$meta_enabled = (bool) \aiwc_get_setting( 'knowledge.index_custom_fields', true );
+$meta_types   = array_values(
+	array_filter(
+		array_map( 'sanitize_key', (array) \aiwc_get_setting( 'knowledge.meta_types', array() ) )
+	)
+);
+// empty allowlist = custom fields indexed for every selected post type
+$meta_for_type = static function ( string $type ) use ( $meta_enabled, $meta_types ): bool {
+	return $meta_enabled && ( empty( $meta_types ) || in_array( $type, $meta_types, true ) );
+};
+
 if ( \aiwc_is_woocommerce_active() ) {
 	$saved_types[] = 'product';
 }
@@ -31,17 +43,23 @@ if ( \aiwc_is_woocommerce_active() ) {
 		<div class="aiwc-type-grid" id="aiwc_content_types">
 			<?php foreach ( $available_types as $name => $object ) : ?>
 				<?php $entry_count = (int) ( $counts[ $name ] ?? 0 ); ?>
-				<label class="aiwc-type-item">
-					<input type="checkbox" data-type="<?php echo esc_attr( $name ); ?>" <?php checked( in_array( $name, $saved_types, true ) ); ?> />
-					<span class="aiwc-type-label"><?php echo esc_html( $object->labels->name ); ?></span>
+				<div class="aiwc-type-item">
+					<label class="aiwc-type-main">
+						<input type="checkbox" data-type="<?php echo esc_attr( $name ); ?>" <?php checked( in_array( $name, $saved_types, true ) ); ?> />
+						<span class="aiwc-type-label"><?php echo esc_html( $object->labels->name ); ?></span>
+					</label>
+					<label class="aiwc-type-meta" title="<?php esc_attr_e( 'Also index custom fields (post meta) for this post type.', 'ai-website-chatbot' ); ?>">
+						<input type="checkbox" data-meta-type="<?php echo esc_attr( $name ); ?>" <?php checked( $meta_for_type( $name ) ); ?> />
+						<span><?php esc_html_e( 'Meta', 'ai-website-chatbot' ); ?></span>
+					</label>
 					<span class="aiwc-type-count"><?php echo esc_html( sprintf( _n( '%d entry', '%d entries', $entry_count, 'ai-website-chatbot' ), $entry_count ) ); ?></span>
-				</label>
+				</div>
 			<?php endforeach; ?>
 		</div>
 		<p>
 			<label>
-				<input type="checkbox" id="aiwc_index_meta" <?php checked( (bool) \aiwc_get_setting( 'knowledge.index_custom_fields', true ) ); ?> />
-				<?php esc_html_e( 'Also index custom fields (content stored in post meta, e.g. plans, prices and FAQ sections).', 'ai-website-chatbot' ); ?>
+				<input type="checkbox" id="aiwc_index_meta" <?php checked( $meta_enabled ); ?> />
+				<?php esc_html_e( 'Index custom fields globally (custom field content, e.g. plans, prices and FAQ sections). Use the per-type Meta toggle to choose which post types include them.', 'ai-website-chatbot' ); ?>
 			</label>
 		</p>
 		<p>

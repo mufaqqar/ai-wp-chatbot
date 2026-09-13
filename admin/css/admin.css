@@ -65,20 +65,58 @@
 .aiwc-type-item {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 10px;
 	border: 1px solid #dcdcde;
 	border-radius: 6px;
 	padding: 10px 12px;
 	background: #f6f7f7;
-	cursor: pointer;
 }
 
 .aiwc-type-item:hover {
 	border-color: #2271b1;
 }
 
-.aiwc-type-item input {
+.aiwc-type-main,
+.aiwc-type-meta {
+	display: flex;
+	align-items: center;
+	gap: 6px;
 	margin: 0;
+}
+
+.aiwc-type-main {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.aiwc-type-main input,
+.aiwc-type-meta input {
+	margin: 0;
+}
+
+.aiwc-type-meta {
+	font-size: 11px;
+	color: #50575e;
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	padding: 3px 6px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.aiwc-type-meta:has(input:checked) {
+	border-color: #2271b1;
+	color: #2271b1;
+}
+
+.aiwc-type-meta input:disabled {
+	cursor: not-allowed;
+}
+
+.aiwc-type-meta:has(input:disabled) {
+	opacity: 0.5;
+	cursor: not-allowed;
 }
 
 .aiwc-type-label {
