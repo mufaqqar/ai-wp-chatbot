@@ -61,6 +61,7 @@ class Settings {
 				'retrieval_count'     => 5,
 				'content_types'       => array( 'page', 'post' ),
 				'index_custom_fields' => true,
+				'meta_types'          => array(),
 			),
 			'woocommerce'         => array(
 				'enabled'       => false,
@@ -247,6 +248,7 @@ class Settings {
 				$values['retrieval_count']   = max( 1, min( 20, (int) $values['retrieval_count'] ) );
 				$values['content_types']       = array_map( 'sanitize_key', (array) $values['content_types'] );
 				$values['index_custom_fields'] = (bool) $values['index_custom_fields'];
+				$values['meta_types']          = array_map( 'sanitize_key', (array) $values['meta_types'] );
 				break;
 			case 'woocommerce':
 				$values['enabled']          = (bool) $values['enabled'];
