@@ -121,7 +121,13 @@ class Content_Indexer {
 
 		if ( is_serialized( $s ) ) {
 			$u = @unserialize( $s, array( 'allowed_classes' => false ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_function_unserialize
-			if ( is_array( $u ) && count( $u ) <= 100 ) {
+			if ( is_array( $u ) ) {
+				if ( count( $u ) > 100 ) {
+					return array();
+				}
+				return self::flatten_meta_value( $u, $depth + 1 );
+			}
+			if ( is_scalar( $u ) && is_serialized( (string) $u ) ) {
 				return self::flatten_meta_value( $u, $depth + 1 );
 			}
 			return array();
@@ -138,20 +144,50 @@ class Content_Indexer {
 	}
 
 	/**
-	 * Determine whether a normalized leaf value is junk (images, field refs,
-	 * URLs, plain IDs etc.) and should not be indexed.
+	 * Whether a meta key is internal bookkeeping rather than authored
+	 * content.  Leading-underscore keys are WordPress conventions; the
+	 * extra tokens catch well-known non-underscored keys.
+	 *
+	 * @param string $key Meta key.
+	 * @return bool
+	 */
+	private static function is_internal_meta_key( string $key ): bool {
+		if ( 0 === strpos( $key, '_' ) ) {
+			return true;
+		}
+
+		$lkey = strtolower( $key );
+		if ( preg_match( '/^(edit_lock|edit_last|wp_page_template|last_editor_used_jetpack|rank_math|yoast)/', $lkey ) ) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Determine whether a normalized leaf value is junk (image URLs, field
+	 * refs, plain IDs, hashes, asset paths etc.) and should not be indexed.
 	 *
 	 * @param string $text Normalized text.
 	 * @return bool
 	 */
 	private static function is_noise_value( string $text ): bool {
-		if ( preg_match( '/^\d+$/', $text ) ) {
+		if ( '' === $text || ctype_space( $text ) ) {
+			return true;
+		}
+		if ( mb_strlen( $text ) < 2 ) {
 			return true;
 		}
 		if ( preg_match( '/^field_[a-f0-9]{13}$/i', $text ) ) {
 			return true;
 		}
 		if ( filter_var( $text, FILTER_VALIDATE_URL ) ) {
+			return true;
+		}
+		if ( false !== stripos( $text, 'wp-content' ) ) {
+			return true;
+		}
+		if ( preg_match( '/^[a-f0-9]{32}$/i', $text ) || preg_match( '/^[a-f0-9]{40}$/i', $text ) ) {
 			return true;
 		}
 		return false;
