@@ -18,26 +18,107 @@ class Content_Indexer {
 	public const PROGRESS_OPTION = 'aiwc_index_progress';
 
 	/**
-	 * Post types eligible for indexing.
+	 * Post types excluded from the "Content to index" selector because they are
+	 * internal system types (media, revisions, template parts, orders etc.).
+	 *
+	 * @var array
+	 */
+	private const EXCLUDED_TYPES = array(
+		'attachment',
+		'revision',
+		'nav_menu_item',
+		'custom_css',
+		'customize_changeset',
+		'oembed_cache',
+		'user_request',
+		'wp_block',
+		'wp_template',
+		'wp_template_part',
+		'wp_navigation',
+		'wp_global_styles',
+		'wp_font_library',
+		'wp_font_family',
+		'wp_font_face',
+		'product_variation',
+		'shop_order',
+		'shop_order_refund',
+		'shop_coupon',
+		'shop_webhook',
+	);
+
+	/**
+	 * Post types currently selected for indexing (pages, posts and any enabled
+	 * custom post types from the Knowledge Base screen). The selection is the
+	 * single source of truth — WooCommerce products are indexed too when their
+	 * post type is selected.
 	 *
 	 * @return array
 	 */
 	public static function indexable_post_types(): array {
-		$types = array( 'page', 'post' );
-		$saved = (array) Settings::get_setting( 'knowledge.content_types', array( 'page', 'post' ) );
+		return array_values(
+			array_filter(
+				array_unique(
+					array_map(
+						'sanitize_key',
+						(array) Settings::get_setting( 'knowledge.content_types', array( 'page', 'post' ) )
+					)
+				),
+				'post_type_exists'
+			)
+		);
+	}
 
-		foreach ( $saved as $type ) {
-			$type = sanitize_key( $type );
-			if ( '' !== $type && post_type_exists( $type ) && ! in_array( $type, $types, true ) ) {
-				$types[] = $type;
+	/**
+	 * Post types available for the "Content to index" selector. Public post
+	 * types with internal/system types filtered out.
+	 *
+	 * @return array<string,\WP_Post_Type>
+	 */
+	public static function available_post_types(): array {
+		$types = array();
+		foreach ( get_post_types( array( 'public' => true ), 'objects' ) as $name => $object ) {
+			if ( in_array( $name, self::EXCLUDED_TYPES, true ) ) {
+				continue;
 			}
-		}
-
-		if ( aiwc_is_woocommerce_active() && post_type_exists( 'product' ) && ! in_array( 'product', $types, true ) ) {
-			$types[] = 'product';
+			$types[ $name ] = $object;
 		}
 
 		return $types;
+	}
+
+	/**
+	 * Number of publishable candidate posts per available post type.
+	 *
+	 * @return array<string,int>
+	 */
+	public static function candidate_counts_by_type(): array {
+		global $wpdb;
+
+		$available = self::available_post_types();
+		if ( empty( $available ) ) {
+			return array();
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $available ), '%s' ) );
+
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared
+		$results = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT post_type, COUNT(*) AS c FROM {$wpdb->posts}
+				WHERE post_status = 'publish' AND post_type IN ({$placeholders})
+				GROUP BY post_type",
+				array_keys( $available )
+			),
+			ARRAY_A
+		);
+		// phpcs:enable
+
+		$counts = array();
+		foreach ( (array) $results as $row ) {
+			$counts[ $row['post_type'] ] = (int) $row['c'];
+		}
+
+		return $counts;
 	}
 
 	/**
@@ -196,14 +277,31 @@ class Content_Indexer {
 		$failed   = (int) ( $progress['failed'] ?? 0 );
 
 		if ( ! isset( $progress['total'] ) ) {
-			$progress['total'] = self::total_candidates();
-			$progress['done']  = 0;
+			$progress['total']  = self::total_candidates();
+			$progress['done']   = 0;
 			$progress['offset'] = 0;
 			$progress['failed'] = 0;
-			$offset            = 0;
+			$offset             = 0;
 		}
 
-		$types      = self::indexable_post_types();
+		$types = self::indexable_post_types();
+
+		if ( empty( $types ) || (int) $progress['total'] <= 0 ) {
+			self::index_faqs();
+			self::purge_stale();
+			delete_option( self::PROGRESS_OPTION );
+
+			return array(
+				'batch'       => 0,
+				'total'       => 0,
+				'done'        => 0,
+				'remaining'   => 0,
+				'next_offset' => 0,
+				'failed'      => $failed,
+				'finished'    => true,
+			);
+		}
+
 		$placeholders = implode( ',', array_fill( 0, count( $types ), '%s' ) );
 
 		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared
@@ -272,7 +370,11 @@ class Content_Indexer {
 	public static function total_candidates(): int {
 		global $wpdb;
 
-		$types      = self::indexable_post_types();
+		$types = self::indexable_post_types();
+		if ( empty( $types ) ) {
+			return 0;
+		}
+
 		$placeholders = implode( ',', array_fill( 0, count( $types ), '%s' ) );
 
 		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared

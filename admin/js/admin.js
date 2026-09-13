@@ -82,6 +82,8 @@
 			});
 		};
 
+		window.aiwcKnowledgeReload = listWrap;
+
 		var startBtn = document.getElementById('aiwc_index_start');
 		var stepBtn = document.getElementById('aiwc_index_step');
 		var bar = document.getElementById('aiwc_progress_fill');
@@ -488,10 +490,45 @@
 		}
 	}
 
+	/* --------------------- Content types selector --------------------- */
+	function initContentTypes() {
+		var grid = document.getElementById('aiwc_content_types');
+		var save = document.getElementById('aiwc_types_save');
+		if (!grid || !save) { return; }
+
+		var boxes = Array.prototype.slice.call(grid.querySelectorAll('input[type="checkbox"]'));
+
+		function selected() {
+			return boxes.filter(function (box) { return box.checked; }).map(function (box) { return box.getAttribute('data-type'); });
+		}
+
+		boxes.forEach(function (box) {
+			box.addEventListener('change', function () { save.disabled = false; });
+		});
+
+		save.addEventListener('click', function () {
+			save.disabled = true;
+			api('/admin/settings', {
+				method: 'POST',
+				body: JSON.stringify({ knowledge: { content_types: selected() } })
+			}).then(function (data) {
+				if (!data || data.success === false) {
+					notice((data && data.message) || (aiwcAdmin.messages || {}).error || 'Error', 'error');
+					save.disabled = false;
+					return;
+				}
+				notice((aiwcAdmin.messages || {}).saved || 'Settings saved.');
+				window.aiwcKnowledgeReload && window.aiwcKnowledgeReload();
+				if (document.getElementById('aiwc_index_step')) { document.getElementById('aiwc_index_step').disabled = false; }
+			});
+		});
+	}
+
 	function init() {
 		if (document.getElementById('aiwc_index_start') || document.getElementById('aiwc_knowledge_table')) {
 			initKnowledge();
 		}
+		initContentTypes();
 		if (document.getElementById('aiwc_faq_save')) { initFaqs(); }
 		if (document.getElementById('aiwc_conversation_list')) { initConversations(); }
 		if (document.getElementById('aiwc_lead_table')) { initLeads(); }

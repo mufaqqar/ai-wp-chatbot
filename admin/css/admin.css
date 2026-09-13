@@ -55,6 +55,44 @@
 	margin: 12px 0;
 }
 
+.aiwc-type-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+	gap: 10px;
+	margin: 12px 0;
+}
+
+.aiwc-type-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	border: 1px solid #dcdcde;
+	border-radius: 6px;
+	padding: 10px 12px;
+	background: #f6f7f7;
+	cursor: pointer;
+}
+
+.aiwc-type-item:hover {
+	border-color: #2271b1;
+}
+
+.aiwc-type-item input {
+	margin: 0;
+}
+
+.aiwc-type-label {
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.aiwc-type-count {
+	margin-left: auto;
+	font-size: 11px;
+	color: #646970;
+	white-space: nowrap;
+}
+
 .aiwc-pagination {
 	display: flex;
 	gap: 6px;
