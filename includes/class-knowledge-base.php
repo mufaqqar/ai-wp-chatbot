@@ -112,6 +112,22 @@ class Knowledge_Base {
 	}
 
 	/**
+	 * Delete an entry by source id.
+	 *
+	 * @param string $source_id Source identifier.
+	 * @return void
+	 */
+	public static function delete_source( string $source_id ): void {
+		global $wpdb;
+
+		if ( '' === $source_id ) {
+			return;
+		}
+
+		$wpdb->delete( aiwc_table( 'knowledge' ), array( 'source_id' => $source_id ), array( '%s' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+	}
+
+	/**
 	 * Delete entries for a given post.
 	 *
 	 * @param int $post_id Post id.
@@ -263,7 +279,7 @@ class Knowledge_Base {
 		$params[] = $limit;
 
 		$sql = "SELECT id, question, answer FROM {$table}
-			WHERE status = 'active' AND " . implode( ' AND ', $like ) . "
+			WHERE status = 'active' AND " . implode( ' OR ', $like ) . "
 			ORDER BY sort_order ASC LIMIT %d";
 
 		$rows    = $wpdb->get_results( $wpdb->prepare( $sql, $params ), ARRAY_A ); // phpcs:ignore WordPress.DB
@@ -297,7 +313,9 @@ class Knowledge_Base {
 	}
 
 	/**
-	 * Keyword relevance search over knowledge entries.
+	 * Keyword relevance search over knowledge entries. Uses OR matching with
+	 * IDF-weighted, logarithmically saturated scoring so common words ("internet",
+	 * "data") never outrank specific terms such as a provider name.
 	 *
 	 * @param string $query Query text.
 	 * @param int    $limit Maximum candidates.
@@ -312,7 +330,6 @@ class Knowledge_Base {
 		}
 
 		$table   = aiwc_table( 'knowledge' );
-		$conds   = array();
 		$params  = array();
 		$like    = array();
 		$like_p  = array();
@@ -324,21 +341,34 @@ class Knowledge_Base {
 			$like_p[] = $pat;
 		}
 
-		$conds  = array( implode( ' AND ', $like ) );
-		$params = array_merge( $params, $like_p, array( $limit ) );
+		$conds  = array( implode( ' OR ', $like ) );
+		$params = array_merge( $like_p, array( $limit ) );
 
 		$sql = "SELECT id, source_id, post_id, post_type, title, url, content FROM {$table}
 			WHERE status = 'active' AND " . implode( ' AND ', $conds ) . "
-			ORDER BY updated_at DESC LIMIT %d";
+			LIMIT %d";
 
 		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $params ), ARRAY_A ); // phpcs:ignore WordPress.DB
 
+		$total = self::count();
+		$idf   = array();
+		foreach ( $tokens as $token ) {
+			$df = (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+				$wpdb->prepare(
+					"SELECT COUNT(*) FROM {$table} WHERE status = 'active' AND (title LIKE %s OR content LIKE %s)",
+					'%' . $wpdb->esc_like( $token ) . '%',
+					'%' . $wpdb->esc_like( $token ) . '%'
+				)
+			);
+			$idf[ $token ] = $df > 0 ? log( ( $total + 1 ) / ( $df + 1 ) ) + 1.0 : 2.5;
+		}
+
 		$results = array();
 		foreach ( (array) $rows as $row ) {
-			$title_score  = self::score( $tokens, (string) $row['title'], 3 );
-			$content_score = self::score( $tokens, (string) $row['content'], 1 );
-			$score        = $title_score + $content_score;
-			if ( $score <= 0 ) {
+			$title_score   = self::score( $tokens, (string) $row['title'], 6, $idf );
+			$content_score = self::score( $tokens, (string) $row['content'], 2, $idf );
+			$total_score   = $title_score + $content_score;
+			if ( $total_score <= 0 ) {
 				continue;
 			}
 
@@ -352,7 +382,7 @@ class Knowledge_Base {
 				'url'       => (string) $row['url'],
 				'snippet'   => $snippet,
 				'content'   => (string) $row['content'],
-				'score'     => $score,
+				'score'     => $total_score,
 			);
 		}
 
@@ -373,7 +403,7 @@ class Knowledge_Base {
 	 * @return array<string>
 	 */
 	private static function tokens( string $text ): array {
-		$stop = array( 'i', 'me', 'my', 'we', 'our', 'you', 'your', 'a', 'an', 'the', 'is', 'are', 'do', 'does', 'did', 'what', 'which', 'who', 'how', 'where', 'when', 'why', 'of', 'in', 'on', 'for', 'to', 'at', 'and', 'or', 'not', 'can', 'could', 'would', 'will', 'please', 'tell', 'about', 'me' );
+		$stop = array( 'i', 'me', 'my', 'we', 'our', 'you', 'your', 'a', 'an', 'the', 'is', 'are', 'am', 'was', 'were', 'be', 'been', 'being', 'has', 'have', 'had', 'do', 'does', 'did', 'what', 'which', 'who', 'whom', 'whose', 'how', 'where', 'when', 'why', 'of', 'in', 'on', 'for', 'to', 'at', 'and', 'or', 'not', 'no', 'can', 'could', 'would', 'will', 'shall', 'should', 'may', 'might', 'must', 'please', 'tell', 'about', 'with', 'without', 'from', 'by', 'than', 'then', 'this', 'that', 'these', 'those', 'there', 'here', 'it', 'its', 'them', 'they', 'so', 'as', 'if', 'but', 'also', 'too', 'very', 'just', 'get', 'got', 'many', 'much', 'more', 'most', 'some', 'any', 'all', 'into', 'out', 'up', 'down', 'over', 'under', 'off', 'list', 'help', 'want', 'need', 'like', 'know', 'say', 'us', 'time', 'day', 'way', 'things' );
 
 		$words = preg_split( '/[^a-z0-9]+/i', mb_strtolower( $text ) );
 		$words = array_filter(
@@ -389,20 +419,27 @@ class Knowledge_Base {
 	}
 
 	/**
-	 * Score a document for a set of tokens.
+	 * Score a document for a set of tokens. The recurring count is logarithmically
+	 * saturated and each token is weighted by its inverse document frequency so
+	 * rare, specific terms dominate over common words repeated in every entry.
 	 *
 	 * @param array  $tokens Tokens.
 	 * @param string $text   Document text.
 	 * @param float  $weight Weight multiplier per match.
+	 * @param array  $idf    Inverse document frequency per token.
 	 * @return float
 	 */
-	private static function score( array $tokens, string $text, float $weight ): float {
+	private static function score( array $tokens, string $text, float $weight, array $idf = array() ): float {
 		$lower = mb_strtolower( $text );
 		$score = 0.0;
 
 		foreach ( $tokens as $token ) {
 			$count = substr_count( $lower, $token );
-			$score += $count * $weight;
+			if ( $count <= 0 ) {
+				continue;
+			}
+
+			$score += $weight * ( $idf[ $token ] ?? 1.0 ) * log1p( $count );
 		}
 
 		return $score;

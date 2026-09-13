@@ -497,20 +497,30 @@
 		if (!grid || !save) { return; }
 
 		var boxes = Array.prototype.slice.call(grid.querySelectorAll('input[type="checkbox"]'));
+		var meta = document.getElementById('aiwc_index_meta');
 
 		function selected() {
 			return boxes.filter(function (box) { return box.checked; }).map(function (box) { return box.getAttribute('data-type'); });
 		}
 
+		function markDirty() {
+			save.disabled = false;
+		}
+
 		boxes.forEach(function (box) {
-			box.addEventListener('change', function () { save.disabled = false; });
+			box.addEventListener('change', markDirty);
 		});
+		if (meta) {
+			meta.addEventListener('change', markDirty);
+		}
 
 		save.addEventListener('click', function () {
 			save.disabled = true;
+			var payload = { knowledge: { content_types: selected() } };
+			if (meta) { payload.knowledge.index_custom_fields = meta.checked; }
 			api('/admin/settings', {
 				method: 'POST',
-				body: JSON.stringify({ knowledge: { content_types: selected() } })
+				body: JSON.stringify(payload)
 			}).then(function (data) {
 				if (!data || data.success === false) {
 					notice((data && data.message) || (aiwcAdmin.messages || {}).error || 'Error', 'error');

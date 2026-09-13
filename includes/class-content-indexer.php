@@ -47,6 +47,100 @@ class Content_Indexer {
 	);
 
 	/**
+	 * Build a text block from post meta (custom fields) by flattening values,
+	 * skipping ACF field references, serialized blobs, images and other noise.
+	 *
+	 * @param int $post_id   Post ID.
+	 * @param int $max_items Maximum leaf values to include.
+	 * @return string
+	 */
+	public static function meta_content( int $post_id, int $max_items = 300 ): string {
+		$meta  = get_post_meta( $post_id );
+		$parts = array();
+
+		foreach ( (array) $meta as $key => $values ) {
+			if ( '' === (string) $key || 0 === strpos( (string) $key, '_' ) ) {
+				continue;
+			}
+			$lkey = strtolower( (string) $key );
+			if ( 0 === strpos( $lkey, 'rank_math' ) || 0 === strpos( $lkey, 'yoast' ) ) {
+				continue;
+			}
+			foreach ( (array) $values as $value ) {
+				foreach ( self::flatten_meta_value( $value ) as $text ) {
+					$text = aiwc_normalize_content( (string) $text );
+					if ( '' !== $text && ! self::is_noise_value( $text ) ) {
+						$parts[] = (string) $key . ': ' . $text;
+					}
+				}
+			}
+			if ( count( $parts ) >= $max_items ) {
+				break;
+			}
+		}
+
+		return implode( "\n", $parts );
+	}
+
+	/**
+	 * Recursively flatten a meta value into an array of leaf strings.
+	 *
+	 * @param mixed $value Value from get_post_meta.
+	 * @param int   $depth Recursion depth guard.
+	 * @return string[]
+	 */
+	private static function flatten_meta_value( $value, int $depth = 0 ): array {
+		if ( is_array( $value ) ) {
+			if ( $depth > 3 || count( $value ) > 100 ) {
+				return array();
+			}
+			$out = array();
+			foreach ( $value as $v ) {
+				foreach ( self::flatten_meta_value( $v, $depth + 1 ) as $t ) {
+					$out[] = $t;
+				}
+			}
+			return $out;
+		}
+
+		if ( ! is_scalar( $value ) ) {
+			return array();
+		}
+
+		$s = (string) $value;
+
+		if ( is_serialized( $s ) ) {
+			$u = @unserialize( $s, array( 'allowed_classes' => false ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_function_unserialize
+			if ( is_array( $u ) && count( $u ) <= 100 ) {
+				return self::flatten_meta_value( $u, $depth + 1 );
+			}
+			return array();
+		}
+
+		return array( $s );
+	}
+
+	/**
+	 * Determine whether a normalized leaf value is junk (images, field refs,
+	 * URLs, plain IDs etc.) and should not be indexed.
+	 *
+	 * @param string $text Normalized text.
+	 * @return bool
+	 */
+	private static function is_noise_value( string $text ): bool {
+		if ( preg_match( '/^\d+$/', $text ) ) {
+			return true;
+		}
+		if ( preg_match( '/^field_[a-f0-9]{13}$/i', $text ) ) {
+			return true;
+		}
+		if ( filter_var( $text, FILTER_VALIDATE_URL ) ) {
+			return true;
+		}
+		return false;
+	}
+
+	/**
 	 * Post types currently selected for indexing (pages, posts and any enabled
 	 * custom post types from the Knowledge Base screen). The selection is the
 	 * single source of truth — WooCommerce products are indexed too when their
@@ -170,6 +264,13 @@ class Content_Indexer {
 			$content .= "\n" . $body;
 		}
 
+		if ( (bool) Settings::get_setting( 'knowledge.index_custom_fields', true ) ) {
+			$meta = self::meta_content( $post_id );
+			if ( '' !== $meta ) {
+				$content .= "\n" . $meta;
+			}
+		}
+
 		$content = trim( $content );
 		if ( '' === $content ) {
 			return null;
@@ -263,6 +364,69 @@ class Content_Indexer {
 	}
 
 	/**
+	 * Maintain one "overview" knowledge entry per selected post type that
+	 * lists the published entries so the assistant can answer site-level
+	 * questions such as "how many providers do you have?".
+	 *
+	 * @return void
+	 */
+	public static function index_type_overviews(): void {
+		global $wpdb;
+
+		foreach ( self::indexable_post_types() as $type ) {
+			$object = get_post_type_object( $type );
+			if ( ! $object ) {
+				continue;
+			}
+
+			$label = (string) $object->labels->name;
+			$rows  = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+				$wpdb->prepare(
+					"SELECT post_title FROM {$wpdb->posts}
+					WHERE post_status = 'publish' AND post_type = '%s'
+					AND (post_password = '' OR post_password IS NULL)
+					ORDER BY post_title ASC",
+					$type
+				)
+			);
+
+			$names = array();
+			foreach ( (array) $rows as $row ) {
+				$title = trim( (string) $row->post_title );
+				if ( '' !== $title ) {
+					$names[] = $title;
+				}
+			}
+
+			if ( empty( $names ) ) {
+				Knowledge_Base::delete_source( 'type:' . $type );
+				continue;
+			}
+
+			$content = wp_sprintf(
+				/* translators: 1: entry count, 2: post type label, 3: list of entry names. */
+				__( 'The website currently lists %1$d %2$s: %3$s.', 'ai-website-chatbot' ),
+				count( $names ),
+				$label,
+				implode( ', ', $names )
+			);
+
+			Knowledge_Base::upsert(
+				array(
+					'source_id'    => 'type:' . $type,
+					'post_id'      => 0,
+					'post_type'    => $type,
+					'title'        => $label,
+					'url'          => (string) get_post_type_archive_link( $type ),
+					'content'      => $content,
+					'content_hash' => hash( 'sha256', $content ),
+					'metadata'     => array( 'overview' => true, 'post_type' => $type, 'count' => count( $names ) ),
+				)
+			);
+		}
+	}
+
+	/**
 	 * Run a full re-index in batches, reporting progress via an option so the
 	 * admin UI can walk through large sites without blocking.
 	 *
@@ -288,6 +452,7 @@ class Content_Indexer {
 
 		if ( empty( $types ) || (int) $progress['total'] <= 0 ) {
 			self::index_faqs();
+			self::index_type_overviews();
 			self::purge_stale();
 			delete_option( self::PROGRESS_OPTION );
 
@@ -333,6 +498,7 @@ class Content_Indexer {
 		$finished     = $done < $batch_size || $offset >= $total;
 
 		self::index_faqs();
+		self::index_type_overviews();
 
 		if ( $finished ) {
 			self::purge_stale();
@@ -410,6 +576,14 @@ class Content_Indexer {
 					if ( ! $exists ) {
 						Knowledge_Base::delete( (int) $row['id'] );
 					}
+				}
+				continue;
+			}
+
+			if ( 0 === $post_id && 0 === strpos( (string) $row['source_id'], 'type:' ) ) {
+				$overview_type = substr( (string) $row['source_id'], 5 );
+				if ( ! in_array( $overview_type, self::indexable_post_types(), true ) ) {
+					Knowledge_Base::delete( (int) $row['id'] );
 				}
 				continue;
 			}
@@ -510,5 +684,6 @@ class Content_Indexer {
 		}
 
 		self::index_faqs();
+		self::index_type_overviews();
 	}
 }

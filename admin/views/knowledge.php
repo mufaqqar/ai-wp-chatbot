@@ -39,6 +39,12 @@ if ( \aiwc_is_woocommerce_active() ) {
 			<?php endforeach; ?>
 		</div>
 		<p>
+			<label>
+				<input type="checkbox" id="aiwc_index_meta" <?php checked( (bool) \aiwc_get_setting( 'knowledge.index_custom_fields', true ) ); ?> />
+				<?php esc_html_e( 'Also index custom fields (content stored in post meta, e.g. plans, prices and FAQ sections).', 'ai-website-chatbot' ); ?>
+			</label>
+		</p>
+		<p>
 			<button type="button" class="button button-primary" id="aiwc_types_save" disabled><?php esc_html_e( 'Save post types', 'ai-website-chatbot' ); ?></button>
 			<span class="description" id="aiwc_types_hint"><?php esc_html_e( 'Changes are applied the next time the website is indexed. Re-index to update the existing entries.', 'ai-website-chatbot' ); ?></span>
 		</p>

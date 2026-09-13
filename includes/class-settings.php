@@ -55,11 +55,12 @@ class Settings {
 				'retries'     => 1,
 			),
 			'knowledge'           => array(
-				'retrieval_enabled' => true,
-				'auto_index'        => true,
-				'show_sources'      => true,
-				'retrieval_count'   => 5,
-				'content_types'     => array( 'page', 'post' ),
+				'retrieval_enabled'   => true,
+				'auto_index'          => true,
+				'show_sources'        => true,
+				'retrieval_count'     => 5,
+				'content_types'       => array( 'page', 'post' ),
+				'index_custom_fields' => true,
 			),
 			'woocommerce'         => array(
 				'enabled'       => false,
@@ -244,7 +245,8 @@ class Settings {
 				$values['auto_index']        = (bool) $values['auto_index'];
 				$values['show_sources']      = (bool) $values['show_sources'];
 				$values['retrieval_count']   = max( 1, min( 20, (int) $values['retrieval_count'] ) );
-				$values['content_types']     = array_map( 'sanitize_key', (array) $values['content_types'] );
+				$values['content_types']       = array_map( 'sanitize_key', (array) $values['content_types'] );
+				$values['index_custom_fields'] = (bool) $values['index_custom_fields'];
 				break;
 			case 'woocommerce':
 				$values['enabled']          = (bool) $values['enabled'];
