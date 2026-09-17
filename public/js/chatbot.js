@@ -75,6 +75,133 @@
 		}
 	}
 
+	function escapeHtml(text) {
+		return String(text)
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#39;');
+	}
+
+	function renderInline(text) {
+		return escapeHtml(text)
+			.replace(/`([^`]+)`/g, '<code>$1</code>')
+			.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+			.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
+			.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+	}
+
+	function closeMarkdownLists(html, inList, listType) {
+		if (inList) {
+			html += '</' + listType + '>';
+		}
+		return html;
+	}
+
+	function renderMarkdown(text) {
+		var lines = String(text).replace(/\r\n/g, '\n').split('\n');
+		var html = '';
+		var inList = false;
+		var listType = '';
+		var inCode = false;
+		var codeLines = [];
+
+		function closeLists() {
+			if (inList) {
+				html += '</' + listType + '>';
+				inList = false;
+				listType = '';
+			}
+		}
+
+		lines.forEach(function (line) {
+			var trimmed = line.trim();
+
+			if (/^\s*```/.test(trimmed)) {
+				closeLists();
+				if (!inCode) {
+					inCode = true;
+					codeLines = [];
+				} else {
+					inCode = false;
+					html += '<pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>';
+				}
+				return;
+			}
+			if (inCode) {
+				codeLines.push(line);
+				return;
+			}
+
+			var h = trimmed.match(/^(#{1,4})\s+(.*)$/);
+			if (h) {
+				closeLists();
+				var lvl = h[1].length;
+				html += '<h' + lvl + ' class="aiwc-md-h">' + renderInline(h[2]) + '</h' + lvl + '>';
+				return;
+			}
+
+			var ul = trimmed.match(/^([-*+])\s+(.*)$/);
+			if (ul) {
+				if (!inList || listType !== 'ul') {
+					closeLists();
+					html += '<ul>';
+					inList = true;
+					listType = 'ul';
+				}
+				html += '<li>' + renderInline(ul[2]) + '</li>';
+				return;
+			}
+
+			var ol = trimmed.match(/^(\d+)[.)]\s+(.*)$/);
+			if (ol) {
+				if (!inList || listType !== 'ol') {
+					closeLists();
+					html += '<ol>';
+					inList = true;
+					listType = 'ol';
+				}
+				html += '<li>' + renderInline(ol[2]) + '</li>';
+				return;
+			}
+
+			closeLists();
+
+			if (trimmed === '') {
+				html += '<div class="aiwc-md-gap"></div>';
+				return;
+			}
+
+			if (trimmed.indexOf('> ') === 0 || trimmed === '>') {
+				html += '<blockquote>' + renderInline(trimmed.replace(/^>\s?/, '')) + '</blockquote>';
+				return;
+			}
+
+			html += '<p>' + renderInline(trimmed) + '</p>';
+		});
+
+		if (inCode) {
+			html += '<pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>';
+		}
+		return closeMarkdownLists(html, inList, listType);
+	}
+
+	function buildFeedback(messageId) {
+		var feedback = createEl('span', 'aiwc-feedback');
+		var up = createEl('button', '', '');
+		up.innerHTML = icons.feedbackUp;
+		up.title = 'Helpful';
+		up.addEventListener('click', function () { sendFeedback('positive', messageId); });
+		var down = createEl('button', '', '');
+		down.innerHTML = icons.feedbackDown;
+		down.title = 'Not helpful';
+		down.addEventListener('click', function () { sendFeedback('negative', messageId); });
+		feedback.appendChild(up);
+		feedback.appendChild(down);
+		return feedback;
+	}
+
 	function addMessage(role, content, opts) {
 		opts = opts || {};
 		var wrap = createEl('div', 'aiwc-msg ' + (role === 'user' ? 'aiwc-user' : 'aiwc-bot'));
@@ -85,41 +212,50 @@
 		}
 
 		var bubble = createEl('div', 'aiwc-msg-bubble');
-		bubble.textContent = content;
+		if (role === 'assistant') {
+			bubble.innerHTML = renderMarkdown(content || '');
+		} else {
+			bubble.textContent = content || '';
+		}
 		wrap.appendChild(bubble);
 
 		if (role === 'assistant') {
 			var meta = createEl('div', 'aiwc-msg-meta');
-			if (CONFIG.showSources && opts.sources && opts.sources.length) {
+			var hasSources = CONFIG.showSources && opts.sources && opts.sources.length;
+			if (hasSources) {
 				var sources = createEl('div', 'aiwc-sources');
-				sources.appendChild(createEl('div', 'aiwc-sources-title', 'Sources:'));
-				opts.sources.forEach(function (src) {
-					var a = createEl('a', 'aiwc-source-link', src.title);
+				var title = createEl('div', 'aiwc-sources-title');
+				title.textContent = 'Sources (' + opts.sources.length + ')';
+				sources.appendChild(title);
+				var listWrap = createEl('div', 'aiwc-source-list');
+				opts.sources.forEach(function (src, i) {
+					var item = createEl('div', 'aiwc-source-item');
+					var index = createEl('span', 'aiwc-source-index', String(i + 1));
+					var label = src.title || ('Source ' + (i + 1));
+					var link = createEl('a', 'aiwc-source-link', label);
+					item.appendChild(index);
 					if (src.url) {
-						a.setAttribute('href', src.url);
-						a.setAttribute('target', '_blank');
-						a.setAttribute('rel', 'noopener noreferrer');
+						link.setAttribute('href', src.url);
+						link.setAttribute('target', '_blank');
+						link.setAttribute('rel', 'noopener noreferrer');
+						try {
+							var host = new URL(src.url).hostname.replace(/^www\./, '');
+							if (host) {
+								var domain = createEl('span', 'aiwc-source-domain', host);
+								link.appendChild(domain);
+							}
+						} catch (e) { /* ignore */ }
 					} else {
-						a.style.textDecoration = 'none';
-						a.style.cursor = 'default';
+						link.classList.add('aiwc-source-plain');
 					}
-					sources.appendChild(a);
+					item.appendChild(link);
+					listWrap.appendChild(item);
 				});
+				sources.appendChild(listWrap);
 				meta.appendChild(sources);
 			}
-			var feedback = createEl('span', 'aiwc-feedback');
-			var up = createEl('button', '', '');
-			up.innerHTML = icons.feedbackUp;
-			up.title = 'Helpful';
-			up.addEventListener('click', function () { sendFeedback('positive', opts.messageId); });
-			var down = createEl('button', '', '');
-			down.innerHTML = icons.feedbackDown;
-			down.title = 'Not helpful';
-			down.addEventListener('click', function () { sendFeedback('negative', opts.messageId); });
-			feedback.appendChild(up);
-			feedback.appendChild(down);
-			meta.appendChild(feedback);
-			if (opts.sources && opts.sources.length) {
+			if (hasSources) {
+				meta.appendChild(buildFeedback(opts.messageId));
 				wrap.appendChild(meta);
 			}
 		}
