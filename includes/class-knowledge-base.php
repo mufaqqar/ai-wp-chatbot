@@ -140,44 +140,6 @@ class Knowledge_Base {
 	}
 
 	/**
-	 * Delete entries by post type.
-	 *
-	 * @param string $post_type Post type key.
-	 * @return int Number of rows deleted.
-	 */
-	public static function delete_by_post_type( string $post_type ): int {
-		global $wpdb;
-
-		if ( '' === $post_type ) {
-			return 0;
-		}
-
-		$deleted = $wpdb->delete( aiwc_table( 'knowledge' ), array( 'post_type' => $post_type ), array( '%s' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-
-		return (int) $deleted;
-	}
-
-	/**
-	 * Delete entries by a list of row ids.
-	 *
-	 * @param array<int> $ids Row ids.
-	 * @return int Number of rows deleted.
-	 */
-	public static function delete_many( array $ids ): int {
-		global $wpdb;
-
-		$ids = array_values( array_unique( array_map( 'absint', $ids ) ) );
-		if ( empty( $ids ) ) {
-			return 0;
-		}
-
-		$table  = aiwc_table( 'knowledge' );
-		$format = implode( ', ', array_fill( 0, count( $ids ), '%d' ) );
-
-		return (int) $wpdb->query( $wpdb->prepare( "DELETE FROM `{$table}` WHERE id IN ({$format})", $ids ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
-	}
-
-	/**
 	 * Toggle the active status of an entry.
 	 *
 	 * @param int    $id     Row id.

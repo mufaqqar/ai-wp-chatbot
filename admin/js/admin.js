@@ -39,78 +39,22 @@
 
 	/* ---------------------------- Knowledge Base ---------------------------- */
 	function initKnowledge() {
-		var tbodySel = '#aiwc_knowledge_table tbody';
-		var selected = {};
-
-		function selectedIds() {
-			return Object.keys(selected).map(function (k) { return parseInt(k, 10); });
-		}
-
-		function forgetSelection(ids) {
-			ids.forEach(function (id) { delete selected[String(id)]; });
-		}
-
-		function currentPageIds() {
-			var ids = [];
-			document.querySelectorAll('.aiwc-kb-check').forEach(function (cb) {
-				ids.push(parseInt(cb.value, 10));
-			});
-			return ids;
-		}
-
-		function updateBulkState() {
-			var bulkBtn = document.getElementById('aiwc_knowledge_bulk_delete');
-			var label = document.getElementById('aiwc_knowledge_bulk_label');
-			var selectAll = document.getElementById('aiwc_knowledge_select_all');
-			if (!bulkBtn) { return; }
-			var total = selectedIds().length;
-			var onPage = currentPageIds();
-			var checkedOnPage = onPage.filter(function (id) { return selected[String(id)]; }).length;
-			bulkBtn.disabled = total === 0;
-			if (label) {
-				var text = total + ' selected';
-				if (onPage.length > 0 && checkedOnPage !== total) {
-					text += ' · ' + checkedOnPage + ' on this page';
-				}
-				label.textContent = text;
-			}
-			if (selectAll) {
-				selectAll.checked = onPage.length > 0 && checkedOnPage === onPage.length;
-				selectAll.indeterminate = checkedOnPage > 0 && checkedOnPage < onPage.length;
-			}
-		}
-
 		var listWrap = function () {
 			var search = document.getElementById('aiwc_knowledge_search');
 			var type = document.getElementById('aiwc_knowledge_type');
 			var status = document.getElementById('aiwc_knowledge_status');
 			var page = 1;
 			api('/admin/knowledge?page=' + page + '&per_page=20&post_type=' + encodeURIComponent(type ? type.value : '') + '&status=' + encodeURIComponent(status ? status.value : '') + '&search=' + encodeURIComponent(search ? search.value : '')).then(function (data) {
-				var tbody = document.querySelector(tbodySel);
+				var tbody = document.querySelector('#aiwc_knowledge_table tbody');
 				if (!data || !data.items) { return; }
 
 				tbody.innerHTML = '';
 				if (!data.items.length) {
-					tbody.appendChild(el('tr', 'aiwc-empty', '<td colspan="7">No items.</td>'));
-					updateBulkState();
+					tbody.appendChild(el('tr', 'aiwc-empty', '<td colspan="6">No items.</td>'));
 					return;
 				}
 				data.items.forEach(function (item) {
 					var tr = el('tr');
-					var checkCell = el('td', 'aiwc-col-check');
-					var cb = document.createElement('input');
-					cb.type = 'checkbox';
-					cb.className = 'aiwc-kb-check';
-					cb.value = item.id;
-					cb.checked = !!selected[String(item.id)];
-					cb.setAttribute('aria-label', esc(item.title));
-					cb.addEventListener('change', function () {
-						if (cb.checked) { selected[String(cb.value)] = true; }
-						else { delete selected[String(cb.value)]; }
-						updateBulkState();
-					});
-					checkCell.appendChild(cb);
-					tr.appendChild(checkCell);
 					var statusText = item.status === 'active' ? 'Active' : 'Inactive';
 					var title = item.url ? '<a href="' + esc(item.url) + '" target="_blank" rel="noopener">' + esc(item.title) + '</a>' : esc(item.title);
 					tr.appendChild(el('td', '', title));
@@ -127,10 +71,7 @@
 					var del = el('button', 'button button-small', 'Delete');
 					del.addEventListener('click', function () {
 						if (!window.confirm((aiwcAdmin.messages || {}).confirm_delete || 'Delete?')) { return; }
-						api('/admin/knowledge/' + item.id + '/delete', { method: 'POST' }).then(function () {
-							forgetSelection([item.id]);
-							listWrap();
-						});
+						api('/admin/knowledge/' + item.id + '/delete', { method: 'POST' }).then(function () { listWrap(); });
 					});
 					actions.appendChild(toggle);
 					actions.appendChild(del);
@@ -138,7 +79,6 @@
 					tbody.appendChild(tr);
 				});
 				renderPagination('aiwc_knowledge_pagination', data.pages, data.total, page, function (p) { page = p; listWrap(); });
-				updateBulkState();
 			});
 		};
 
@@ -200,61 +140,6 @@
 			document.getElementById('aiwc_knowledge_search').addEventListener('keydown', function (e) { if (e.key === 'Enter') { listWrap(); } });
 			['aiwc_knowledge_type', 'aiwc_knowledge_status'].forEach(function (id) {
 				document.getElementById(id).addEventListener('change', function () { listWrap(); });
-			});
-		}
-
-		var selectAll = document.getElementById('aiwc_knowledge_select_all');
-		if (selectAll) {
-			selectAll.addEventListener('change', function () {
-				document.querySelectorAll('.aiwc-kb-check').forEach(function (cb) {
-					cb.checked = selectAll.checked;
-					if (cb.checked) { selected[String(cb.value)] = true; }
-					else { delete selected[String(cb.value)]; }
-				});
-				updateBulkState();
-			});
-		}
-
-		var bulkDelete = document.getElementById('aiwc_knowledge_bulk_delete');
-		if (bulkDelete) {
-			bulkDelete.addEventListener('click', function () {
-				var ids = selectedIds();
-				if (!ids.length) { return; }
-				var msg = (aiwcAdmin.messages || {}).confirm_bulk_delete || 'Delete the selected items?';
-				if (!window.confirm(msg.replace('{count}', ids.length.toString()))) { return; }
-				api('/admin/knowledge/bulk-delete', { method: 'POST', body: JSON.stringify({ ids: ids }) }).then(function (res) {
-					if (!res || res.success === false) {
-						notice((aiwcAdmin.messages || {}).error || 'Error', 'error');
-						return;
-					}
-					notice(res.deleted + ' ' + ((aiwcAdmin.messages || {}).deleted || 'removed from the index.'));
-					forgetSelection(ids);
-					listWrap();
-				});
-			});
-		}
-
-		var removeTypeSelect = document.getElementById('aiwc_knowledge_remove_type');
-		var removeTypeBtn = document.getElementById('aiwc_knowledge_remove_type_btn');
-		if (removeTypeSelect && removeTypeBtn) {
-			var syncRemoveType = function () {
-				removeTypeBtn.disabled = !removeTypeSelect.value;
-			};
-			syncRemoveType();
-			removeTypeSelect.addEventListener('change', syncRemoveType);
-			removeTypeBtn.addEventListener('click', function () {
-				var postType = removeTypeSelect.value;
-				if (!postType) { return; }
-				if (!window.confirm((aiwcAdmin.messages || {}).confirm_remove_type || 'Remove all indexed content of this type?')) { return; }
-				api('/admin/knowledge/bulk-delete', { method: 'POST', body: JSON.stringify({ post_type: postType }) }).then(function (res) {
-					if (!res || res.success === false) {
-						notice((aiwcAdmin.messages || {}).error || 'Error', 'error');
-						return;
-					}
-					notice(res.deleted + ' removed.');
-					selected = {};
-					listWrap();
-				});
 			});
 		}
 
