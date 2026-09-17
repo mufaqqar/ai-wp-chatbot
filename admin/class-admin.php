@@ -109,11 +109,14 @@ class Admin {
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
 				'exportUrl' => esc_url_raw( admin_url( 'admin-ajax.php?action=aiwc_export_leads&_wpnonce=' . wp_create_nonce( 'aiwc_export_leads' ) ) ),
 				'messages' => array(
-					'confirm_delete' => __( 'Are you sure you want to delete this item?', 'ai-website-chatbot' ),
-					'index_started'  => __( 'Indexing started.', 'ai-website-chatbot' ),
-					'index_done'     => __( 'Indexing complete.', 'ai-website-chatbot' ),
-					'saved'          => __( 'Settings saved.', 'ai-website-chatbot' ),
-					'error'          => __( 'An error occurred. Please try again.', 'ai-website-chatbot' ),
+					'confirm_delete'       => __( 'Are you sure you want to delete this item?', 'ai-website-chatbot' ),
+					'confirm_bulk_delete'  => __( 'Remove {count} selected item(s) from the index?', 'ai-website-chatbot' ),
+					'confirm_remove_type'  => __( 'Remove all indexed content of this post type?', 'ai-website-chatbot' ),
+					'deleted'              => __( 'removed from the index.', 'ai-website-chatbot' ),
+					'index_started'        => __( 'Indexing started.', 'ai-website-chatbot' ),
+					'index_done'           => __( 'Indexing complete.', 'ai-website-chatbot' ),
+					'saved'                => __( 'Settings saved.', 'ai-website-chatbot' ),
+					'error'                => __( 'An error occurred. Please try again.', 'ai-website-chatbot' ),
 				),
 			)
 		);

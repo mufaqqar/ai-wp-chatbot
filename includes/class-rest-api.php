@@ -112,6 +112,7 @@ class REST_API {
 		register_rest_route( self::NAMESPACE, '/admin/index/start', array( 'methods' => \WP_REST_Server::CREATABLE, 'callback' => array( $this, 'admin_index_start' ), 'permission_callback' => $can_manage ) );
 		register_rest_route( self::NAMESPACE, '/admin/index/step', array( 'methods' => \WP_REST_Server::READABLE, 'callback' => array( $this, 'admin_index_step' ), 'permission_callback' => $can_manage ) );
 		register_rest_route( self::NAMESPACE, '/admin/knowledge', array( 'methods' => \WP_REST_Server::READABLE, 'callback' => array( $this, 'admin_knowledge' ), 'permission_callback' => $can_manage ) );
+		register_rest_route( self::NAMESPACE, '/admin/knowledge/bulk-delete', array( 'methods' => \WP_REST_Server::CREATABLE, 'callback' => array( $this, 'admin_knowledge_bulk_delete' ), 'permission_callback' => $can_manage ) );
 		register_rest_route( self::NAMESPACE, '/admin/knowledge/(?P<id>\d+)/toggle', array( 'methods' => \WP_REST_Server::CREATABLE, 'callback' => array( $this, 'admin_knowledge_toggle' ), 'permission_callback' => $can_manage ) );
 		register_rest_route( self::NAMESPACE, '/admin/knowledge/(?P<id>\d+)/delete', array( 'methods' => \WP_REST_Server::CREATABLE, 'callback' => array( $this, 'admin_knowledge_delete' ), 'permission_callback' => $can_manage ) );
 
@@ -430,6 +431,35 @@ class REST_API {
 		Knowledge_Base::delete( (int) $request['id'] );
 
 		return rest_ensure_response( array( 'success' => true ) );
+	}
+
+	/**
+	 * POST /admin/knowledge/bulk-delete
+	 *
+	 * Accepts either an array of row ids (`ids`) or a `post_type` to remove
+	 * every indexed entry of that type.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public function admin_knowledge_bulk_delete( \WP_REST_Request $request ) {
+		$post_type = sanitize_key( (string) $request->get_param( 'post_type' ) );
+		$raw_ids   = $request->get_param( 'ids' );
+		$deleted   = 0;
+
+		if ( is_array( $raw_ids ) && ! empty( $raw_ids ) ) {
+			$ids     = array_map( 'absint', $raw_ids );
+			$deleted = Knowledge_Base::delete_many( $ids );
+		} elseif ( '' !== $post_type ) {
+			$deleted = Knowledge_Base::delete_by_post_type( $post_type );
+		}
+
+		return rest_ensure_response(
+			array(
+				'success' => true,
+				'deleted' => $deleted,
+			)
+		);
 	}
 
 	/**
