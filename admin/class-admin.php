@@ -99,7 +99,8 @@ class Admin {
 		}
 
 		wp_enqueue_style( 'aiwc-admin', AIWC_URL . 'admin/css/admin.css', array(), AIWC_VERSION );
-		wp_enqueue_script( 'aiwc-admin', AIWC_URL . 'admin/js/admin.js', array( 'wp-util' ), AIWC_VERSION, true );
+		wp_enqueue_style( 'wp-color-picker' );
+		wp_enqueue_script( 'aiwc-admin', AIWC_URL . 'admin/js/admin.js', array( 'wp-util', 'wp-color-picker' ), AIWC_VERSION, true );
 
 		wp_localize_script(
 			'aiwc-admin',

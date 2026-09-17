@@ -1,4 +1,4 @@
-/* global aiwcAdmin */
+/* global aiwcAdmin, jQuery */
 (function () {
 	'use strict';
 
@@ -543,6 +543,11 @@
 	}
 
 	function init() {
+		if (window.jQuery && jQuery.fn && jQuery.fn.wpColorPicker) {
+			jQuery(function ($) {
+				$('.aiwc-color').wpColorPicker();
+			});
+		}
 		if (document.getElementById('aiwc_index_start') || document.getElementById('aiwc_knowledge_table')) {
 			initKnowledge();
 		}
