@@ -3,7 +3,7 @@
  * Plugin Name:       AI Website Chatbot
  * Plugin URI:        https://mufaqar.com
  * Description:       AI-powered website chatbot with website knowledge base, FAQ system, WooCommerce integration, lead generation and analytics.
- * Version:           1.0.0
+ * Version:           1.0.1
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            Mufaqar
